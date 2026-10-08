@@ -1,2 +1,0 @@
-# NOVA-AI
-Uma ia 
