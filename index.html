@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NOVA</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: #181b24;
+      --border: #2a2f3d;
+      --text: #e8eaf0;
+      --muted: #8b92a5;
+      --accent: #6c8cff;
+      --user: #2b3a67;
+      --bot: #20242f;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      height: 100dvh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    h1 { margin: 0; font-size: 1.2rem; letter-spacing: 0.08em; }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      width: min(92vw, 380px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .card h1 { font-size: 1.6rem; }
+    .card p { margin: 0; color: var(--muted); }
+    .card form { display: flex; flex-direction: column; gap: 10px; }
+
+    input, textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 12px;
+      font: inherit;
+      outline: none;
+    }
+    input:focus, textarea:focus { border-color: var(--accent); }
+
+    button {
+      background: var(--accent);
+      color: #0b0d14;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .msg { font-size: 0.9rem; min-height: 1.2em; }
+
+    #app {
+      width: min(100vw, 760px);
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+    #app[hidden], #auth[hidden] { display: none; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    header button { padding: 8px 12px; }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .bubble {
+      max-width: 85%;
+      padding: 10px 14px;
+      border-radius: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .bubble.user { align-self: flex-end; background: var(--user); }
+    .bubble.assistant { align-self: flex-start; background: var(--bot); }
+    .bubble.typing { color: var(--muted); font-style: italic; }
+
+    #chat-form {
+      display: flex;
+      gap: 10px;
+      padding: 14px 18px;
+      border-top: 1px solid var(--border);
+    }
+    #chat-form textarea { flex: 1; resize: none; max-height: 140px; }
+  </style>
+</head>
+<body>
+  <section id="auth" class="card">
+    <h1>NOVA</h1>
+    <p>Entre ou crie sua conta</p>
+    <form id="auth-form">
+      <input type="text" id="username" placeholder="Nome de usuário" autocomplete="username"
+             minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+"
+             title="3 a 20 caracteres: letras, números e _" required>
+      <input type="password" id="password" placeholder="Senha (mínimo 6 caracteres)"
+             autocomplete="current-password" minlength="6" required>
+      <button type="submit">Entrar</button>
+      <button type="button" id="btn-signup" class="secondary">Criar conta</button>
+    </form>
+    <p id="auth-msg" class="msg"></p>
+  </section>
+
+  <main id="app" hidden>
+    <header>
+      <h1>NOVA</h1>
+      <button id="btn-logout" class="secondary">Sair</button>
+    </header>
+    <div id="messages"></div>
+    <form id="chat-form">
+      <textarea id="input" rows="1" placeholder="Fale com a NOVA..." required></textarea>
+      <button type="submit" id="btn-send">Enviar</button>
+    </form>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // ============ CONFIGURAÇÃO: edite só estas 2 linhas ============
+    // Supabase > Project Settings > API
+    // A "anon key" pode ficar pública (a segurança vem das regras RLS do banco).
+    const SUPABASE_URL = "https://SEU-PROJETO.supabase.co";
+    const SUPABASE_ANON_KEY = "SUA_ANON_KEY_AQUI";
+    // ================================================================
+
+    // O Supabase exige um email por baixo dos panos. Aqui o nome de usuário
+    // vira "usuario@nova-usuarios.com" automaticamente. Ninguém vê isso e
+    // nenhum email é enviado (desde que "Confirm email" esteja desativado).
+    const USER_DOMAIN = "nova-usuarios.com";
+
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const $ = (id) => document.getElementById(id);
+    const authSection = $("auth");
+    const appSection = $("app");
+    const messagesEl = $("messages");
+    const inputEl = $("input");
+    const sendBtn = $("btn-send");
+
+    // ---------- Autenticação por nome de usuário ----------
+    function toEmail(username) {
+      return username.trim().toLowerCase() + "@" + USER_DOMAIN;
+    }
+
+    function validUsername(u) {
+      return /^[A-Za-z0-9_]{3,20}$/.test(u.trim());
+    }
+
+    function friendlyError(msg) {
+      if (/invalid login credentials/i.test(msg)) return "Usuário ou senha incorretos.";
+      if (/already registered|already been registered/i.test(msg)) return "Esse nome de usuário já está em uso.";
+      if (/email not confirmed/i.test(msg)) return "Conta não confirmada. Desative \"Confirm email\" no Supabase.";
+      if (/password should be at least/i.test(msg)) return "A senha precisa ter no mínimo 6 caracteres.";
+      if (/rate limit/i.test(msg)) return "Muitas tentativas. Aguarde um pouco e tente de novo.";
+      return msg;
+    }
+
+    $("auth-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = $("username").value;
+      if (!validUsername(username)) {
+        return setAuthMsg("Usuário: 3 a 20 caracteres (letras, números e _).", true);
+      }
+      setAuthMsg("Entrando...");
+      const { error } = await sb.auth.signInWithPassword({
+        email: toEmail(username),
+        password: $("password").value,
+      });
+      if (error) setAuthMsg(friendlyError(error.message), true);
+    });
+
+    $("btn-signup").addEventListener("click", async () => {
+      const username = $("username").value;
+      const password = $("password").value;
+      if (!validUsername(username)) {
+        return setAuthMsg("Usuário: 3 a 20 caracteres (letras, números e _).", true);
+      }
+      if (password.length < 6) {
+        return setAuthMsg("A senha precisa ter no mínimo 6 caracteres.", true);
+      }
+      setAuthMsg("Criando conta...");
+      const { data, error } = await sb.auth.signUp({
+        email: toEmail(username),
+        password,
+        options: { data: { username: username.trim() } },
+      });
+      if (error) return setAuthMsg(friendlyError(error.message), true);
+      if (!data.session) {
+        setAuthMsg("Conta criada! Agora é só clicar em Entrar.");
+      }
+    });
+
+    $("btn-logout").addEventListener("click", () => sb.auth.signOut());
+
+    function setAuthMsg(text, isError = false) {
+      const el = $("auth-msg");
+      el.textContent = text;
+      el.style.color = isError ? "#ff7b7b" : "";
+    }
+
+    sb.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        authSection.hidden = true;
+        appSection.hidden = false;
+        loadHistory();
+      } else {
+        authSection.hidden = false;
+        appSection.hidden = true;
+        messagesEl.replaceChildren();
+      }
+    });
+
+    // ---------- Chat ----------
+    function addBubble(role, text, extraClass = "") {
+      const div = document.createElement("div");
+      div.className = `bubble ${role} ${extraClass}`.trim();
+      div.textContent = text; // textContent evita injeção de HTML
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }
+
+    async function loadHistory() {
+      messagesEl.replaceChildren();
+      const { data, error } = await sb
+        .from("messages")
+        .select("role, content")
+        .order("created_at", { ascending: true })
+        .limit(200);
+      if (error) return addBubble("assistant", "Erro ao carregar histórico: " + error.message);
+      if (!data.length) addBubble("assistant", "Olá! Eu sou a NOVA. Como posso te ajudar hoje?");
+      data.forEach((m) => addBubble(m.role, m.content));
+    }
+
+    $("chat-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = inputEl.value.trim();
+      if (!text) return;
+
+      inputEl.value = "";
+      autoGrow();
+      addBubble("user", text);
+      const typing = addBubble("assistant", "Pensando...", "typing");
+      sendBtn.disabled = true;
+
+      try {
+        const { data, error } = await sb.functions.invoke("chat", {
+          body: { message: text },
+        });
+        if (error) throw error;
+        typing.className = "bubble assistant";
+        typing.textContent = data.reply;
+      } catch (err) {
+        typing.className = "bubble assistant";
+        typing.textContent = "Erro: não consegui responder. Tente de novo.";
+        console.error(err);
+      } finally {
+        sendBtn.disabled = false;
+        inputEl.focus();
+      }
+    });
+
+    // Enter envia, Shift+Enter quebra linha
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        $("chat-form").requestSubmit();
+      }
+    });
+    inputEl.addEventListener("input", autoGrow);
+    function autoGrow() {
+      inputEl.style.height = "auto";
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + "px";
+    }
+  </script>
+</body>
+</html>
