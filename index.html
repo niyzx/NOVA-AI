@@ -162,9 +162,11 @@
     // ================================================================
 
     // O Supabase exige um email por baixo dos panos. Aqui o nome de usuário
-    // vira "usuario@nova-usuarios.com" automaticamente. Ninguém vê isso e
-    // nenhum email é enviado (desde que "Confirm email" esteja desativado).
-    const USER_DOMAIN = "nova-usuarios.com";
+    // vira "usuario@gmail.com" automaticamente. Ninguém vê isso e nenhum
+    // email é enviado (desde que "Confirm email" esteja desativado).
+    // Precisa ser um domínio que exista de verdade (com servidor de email),
+    // senão o Supabase recusa com "Email address is invalid".
+    const USER_DOMAIN = "gmail.com";
 
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
